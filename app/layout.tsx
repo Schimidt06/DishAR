@@ -1,19 +1,36 @@
 import type { Metadata } from 'next';
-import { Geist, Geist_Mono } from 'next/font/google';
+import { Archivo, JetBrains_Mono } from 'next/font/google';
 import './globals.css';
 
-const geistSans = Geist({ variable: '--font-geist-sans', subsets: ['latin'] });
-const geistMono = Geist_Mono({ variable: '--font-geist-mono', subsets: ['latin'] });
+const archivo = Archivo({
+  subsets: ['latin'],
+  variable: '--font-archivo',
+  display: 'swap',
+});
+
+const jetbrainsMono = JetBrains_Mono({
+  subsets: ['latin'],
+  variable: '--font-mono',
+  display: 'swap',
+});
 
 export const metadata: Metadata = {
-  title: 'DishAR — veja antes de pedir',
-  description: 'Cardápio demonstrativo com visualização de pratos em 3D e realidade aumentada.',
+  title: 'DishAR — o prato na mesa, antes do pedido',
+  description:
+    'Cardápio em Realidade Aumentada para restaurantes. O cliente lê o QR code na mesa, toca no prato e vê o tamanho real sobre a própria mesa sem baixar aplicativo.',
+  icons: {
+    icon: '/favicon.svg',
+  },
 };
 
-export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+export default function RootLayout({
+  children,
+}: Readonly<{
+  children: React.ReactNode;
+}>) {
   return (
-    <html lang="pt-BR" className="dark">
-      <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>{children}</body>
+    <html lang="pt-BR" className={`${archivo.variable} ${jetbrainsMono.variable} dark`}>
+      <body className="antialiased">{children}</body>
     </html>
   );
 }

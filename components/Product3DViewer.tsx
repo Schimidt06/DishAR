@@ -46,6 +46,9 @@ interface Product3DViewerProps {
     heightMeters: number;
     depthMeters: number;
   };
+  showHint?: boolean;
+  showDimensions?: boolean;
+  className?: string;
   onViewerStateChange?: (state: ProductViewerState) => void;
 }
 
@@ -95,8 +98,11 @@ export const Product3DViewer = forwardRef<ModelViewerRefHandle, Product3DViewerP
       iosModelUrl,
       imageUrl,
       dishName,
-      accentColor = '#43f4a6',
+      accentColor = '#5ac59b',
       dimensions,
+      showHint = true,
+      showDimensions = true,
+      className = '',
       onViewerStateChange,
     },
     ref,
@@ -154,6 +160,7 @@ export const Product3DViewer = forwardRef<ModelViewerRefHandle, Product3DViewerP
         onViewerStateChange?.(viewer.canActivateAR ? 'ready-ar' : 'ready-3d');
         logARDiagnostic('model-loaded', {
           modelUrl: viewer.src,
+          iosSrc: viewer.getAttribute('ios-src'),
           arModes,
           arPlacement: viewer.getAttribute('ar-placement'),
           arScale: viewer.getAttribute('ar-scale'),
@@ -245,6 +252,7 @@ export const Product3DViewer = forwardRef<ModelViewerRefHandle, Product3DViewerP
           setARFeedback(null);
           logARDiagnostic('activation-requested', {
             modelUrl: model3dUrl,
+            iosModelUrl,
             arModes,
             secureContext: window.isSecureContext,
             webXRAvailable: 'xr' in navigator,
@@ -289,7 +297,7 @@ export const Product3DViewer = forwardRef<ModelViewerRefHandle, Product3DViewerP
     const has3DModel = Boolean(model3dUrl && isModuleReady && !hasError);
 
     return (
-      <div className="product-3d-stage">
+      <div className={`product-3d-stage ${className}`}>
         {model3dUrl && isModuleReady && !hasError && (
           <ModelViewerTag
             ref={modelViewerRef}
@@ -302,17 +310,17 @@ export const Product3DViewer = forwardRef<ModelViewerRefHandle, Product3DViewerP
             ar-modes={arModes}
             ar-scale="fixed"
             ar-placement="floor"
-            shadow-intensity="1.2"
+            shadow-intensity="1.1"
             shadow-softness="0.75"
-            exposure="1.05"
+            exposure="1.1"
             environment-image="neutral"
             interaction-prompt="auto"
-            interaction-prompt-threshold="1500"
+            interaction-prompt-threshold="1200"
             auto-rotate
-            auto-rotate-delay="3000"
+            auto-rotate-delay="1500"
             rotation-per-second="18deg"
             camera-orbit="0deg 75deg 105%"
-            min-camera-orbit="auto 20deg 70%"
+            min-camera-orbit="auto 20deg 65%"
             max-camera-orbit="auto 95deg 150%"
             style={
               {
@@ -357,6 +365,7 @@ export const Product3DViewer = forwardRef<ModelViewerRefHandle, Product3DViewerP
               width={1254}
               height={1254}
               className="viewer-fallback-image"
+              priority
             />
             {hasError && (
               <output className="viewer-error-banner">
@@ -367,17 +376,17 @@ export const Product3DViewer = forwardRef<ModelViewerRefHandle, Product3DViewerP
           </div>
         )}
 
-        {has3DModel && !isLoading && !arFeedback && (
+        {has3DModel && !isLoading && !arFeedback && showHint && (
           <div className={`viewer-interaction-hint ${isUserInteracting ? 'hint-dimmed' : ''}`}>
             <Rotate3D className="hint-icon" />
-            <span>Arraste para girar 360°</span>
+            <span>Arraste para girar</span>
           </div>
         )}
 
-        {has3DModel && dimensions && !isLoading && (
+        {has3DModel && dimensions && !isLoading && showDimensions && (
           <div className="viewer-dimensions-tag">
             <span>
-              Dimensão real: {(dimensions.widthMeters * 100).toFixed(0)} ×{' '}
+              Medida real: {(dimensions.widthMeters * 100).toFixed(0)} ×{' '}
               {(dimensions.heightMeters * 100).toFixed(0)} ×{' '}
               {(dimensions.depthMeters * 100).toFixed(0)} cm
             </span>

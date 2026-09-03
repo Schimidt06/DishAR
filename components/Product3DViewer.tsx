@@ -1,0 +1,286 @@
+'use client';
+
+import React, {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+} from 'react';
+import Image from 'next/image';
+import { AlertCircle, Rotate3D } from 'lucide-react';
+import type { ModelViewerElement } from '@google/model-viewer';
+
+export type ARActivationResult =
+  | 'started'
+  | 'unsupported'
+  | 'ios-model-missing'
+  | 'model-unavailable'
+  | 'failed';
+
+export type ProductViewerState =
+  | 'loading'
+  | 'ready-ar'
+  | 'ready-3d'
+  | 'image-only'
+  | 'error';
+
+export interface ModelViewerRefHandle {
+  activateAR: () => Promise<ARActivationResult>;
+  canActivateAR: () => boolean;
+}
+
+interface Product3DViewerProps {
+  model3dUrl?: string;
+  iosModelUrl?: string;
+  imageUrl: string;
+  dishName: string;
+  accentColor?: string;
+  dimensions?: {
+    widthMeters: number;
+    heightMeters: number;
+    depthMeters: number;
+  };
+  onViewerStateChange?: (state: ProductViewerState) => void;
+}
+
+type ModelViewerReactProps = React.HTMLAttributes<ModelViewerElement> & {
+  ref?: React.Ref<ModelViewerElement>;
+  src: string;
+  'ios-src'?: string;
+  alt: string;
+  'camera-controls'?: boolean;
+  'touch-action'?: string;
+  ar?: boolean;
+  'ar-modes'?: string;
+  'ar-scale'?: string;
+  'ar-placement'?: string;
+  'shadow-intensity'?: string;
+  'shadow-softness'?: string;
+  exposure?: string;
+  'environment-image'?: string;
+  'interaction-prompt'?: string;
+  'interaction-prompt-threshold'?: string;
+  'auto-rotate'?: boolean;
+  'auto-rotate-delay'?: string;
+  'rotation-per-second'?: string;
+  'camera-orbit'?: string;
+  'min-camera-orbit'?: string;
+  'max-camera-orbit'?: string;
+};
+
+const ModelViewerTag = 'model-viewer' as React.ElementType<ModelViewerReactProps>;
+
+function isIOSDevice() {
+  if (typeof navigator === 'undefined') return false;
+  return (
+    /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+  );
+}
+
+export const Product3DViewer = forwardRef<ModelViewerRefHandle, Product3DViewerProps>(
+  (
+    {
+      model3dUrl,
+      iosModelUrl,
+      imageUrl,
+      dishName,
+      accentColor = '#43f4a6',
+      dimensions,
+      onViewerStateChange,
+    },
+    ref,
+  ) => {
+    const modelViewerRef = useRef<ModelViewerElement | null>(null);
+    const [isModuleReady, setIsModuleReady] = useState(false);
+    const [isLoading, setIsLoading] = useState(Boolean(model3dUrl));
+    const [progress, setProgress] = useState(0);
+    const [hasError, setHasError] = useState(false);
+    const [errorMessage, setErrorMessage] = useState<string | null>(null);
+    const [isUserInteracting, setIsUserInteracting] = useState(false);
+
+    useEffect(() => {
+      let isMounted = true;
+
+      import('@google/model-viewer')
+        .then(() => {
+          if (isMounted) setIsModuleReady(true);
+        })
+        .catch((error: unknown) => {
+          console.error('Falha ao importar @google/model-viewer:', error);
+          if (isMounted) {
+            setIsLoading(false);
+            setHasError(true);
+            setErrorMessage('Não foi possível inicializar o visualizador 3D.');
+            onViewerStateChange?.('error');
+          }
+        });
+
+      return () => {
+        isMounted = false;
+      };
+    }, [onViewerStateChange]);
+
+    useEffect(() => {
+      const viewer = modelViewerRef.current;
+      if (!viewer || !isModuleReady) return;
+
+      const handleLoad = () => {
+        setIsLoading(false);
+        setHasError(false);
+        setProgress(100);
+        onViewerStateChange?.(viewer.canActivateAR ? 'ready-ar' : 'ready-3d');
+      };
+
+      const handleProgress = (event: Event) => {
+        const { totalProgress = 0 } = (
+          event as CustomEvent<{ totalProgress?: number }>
+        ).detail ?? {};
+        setProgress(Math.round(totalProgress * 100));
+      };
+
+      const handleError = (event: Event) => {
+        console.warn('Erro ao carregar modelo 3D:', event);
+        setIsLoading(false);
+        setHasError(true);
+        setErrorMessage('Não foi possível carregar o modelo 3D. Exibindo a foto do prato.');
+        onViewerStateChange?.('error');
+      };
+
+      const handleCameraChange = () => setIsUserInteracting(true);
+
+      viewer.addEventListener('load', handleLoad);
+      viewer.addEventListener('progress', handleProgress);
+      viewer.addEventListener('error', handleError);
+      viewer.addEventListener('camera-change', handleCameraChange);
+
+      return () => {
+        viewer.removeEventListener('load', handleLoad);
+        viewer.removeEventListener('progress', handleProgress);
+        viewer.removeEventListener('error', handleError);
+        viewer.removeEventListener('camera-change', handleCameraChange);
+      };
+    }, [isModuleReady, model3dUrl, onViewerStateChange]);
+
+    useImperativeHandle(
+      ref,
+      () => ({
+        activateAR: async () => {
+          if (!model3dUrl || hasError) return 'model-unavailable';
+          if (isIOSDevice() && !iosModelUrl) return 'ios-model-missing';
+
+          const viewer = modelViewerRef.current;
+          if (!viewer?.canActivateAR || typeof viewer.activateAR !== 'function') {
+            return 'unsupported';
+          }
+
+          try {
+            await viewer.activateAR();
+            return 'started';
+          } catch (error: unknown) {
+            console.error('Erro ao ativar AR:', error);
+            return 'failed';
+          }
+        },
+        canActivateAR: () => Boolean(modelViewerRef.current?.canActivateAR),
+      }),
+      [hasError, iosModelUrl, model3dUrl],
+    );
+
+    const has3DModel = Boolean(model3dUrl && isModuleReady && !hasError);
+    const arModes = iosModelUrl
+      ? 'webxr scene-viewer quick-look'
+      : 'webxr scene-viewer';
+
+    return (
+      <div className="product-3d-stage">
+        {model3dUrl && isModuleReady && !hasError && (
+          <ModelViewerTag
+            ref={modelViewerRef}
+            src={model3dUrl}
+            ios-src={iosModelUrl}
+            alt={`Modelo 3D do prato ${dishName}`}
+            camera-controls
+            touch-action="pan-y"
+            ar
+            ar-modes={arModes}
+            ar-scale="fixed"
+            ar-placement="floor"
+            shadow-intensity="1.2"
+            shadow-softness="0.75"
+            exposure="1.05"
+            environment-image="neutral"
+            interaction-prompt="auto"
+            interaction-prompt-threshold="1500"
+            auto-rotate
+            auto-rotate-delay="3000"
+            rotation-per-second="18deg"
+            camera-orbit="0deg 75deg 105%"
+            min-camera-orbit="auto 20deg 70%"
+            max-camera-orbit="auto 95deg 150%"
+            style={
+              {
+                width: '100%',
+                height: '100%',
+                backgroundColor: 'transparent',
+                outline: 'none',
+                '--poster-color': 'transparent',
+              } as React.CSSProperties & { '--poster-color': string }
+            }
+          />
+        )}
+
+        {model3dUrl && !hasError && isLoading && (
+          <div className="viewer-loading-overlay" aria-live="polite">
+            <div className="loading-content">
+              <div
+                className="loading-spinner-ring"
+                style={{ borderColor: `${accentColor}33`, borderTopColor: accentColor }}
+              />
+              <p className="loading-title">Preparando visualização 3D...</p>
+              {progress > 0 && <span className="loading-percent">{progress}%</span>}
+            </div>
+          </div>
+        )}
+
+        {(!model3dUrl || hasError) && (
+          <div className="viewer-fallback-container">
+            <Image
+              src={imageUrl}
+              alt={dishName}
+              width={1254}
+              height={1254}
+              className="viewer-fallback-image"
+            />
+            {hasError && (
+              <output className="viewer-error-banner">
+                <AlertCircle className="w-4 h-4 text-amber-400" />
+                <span>{errorMessage}</span>
+              </output>
+            )}
+          </div>
+        )}
+
+        {has3DModel && !isLoading && (
+          <div className={`viewer-interaction-hint ${isUserInteracting ? 'hint-dimmed' : ''}`}>
+            <Rotate3D className="hint-icon" />
+            <span>Arraste para girar 360°</span>
+          </div>
+        )}
+
+        {has3DModel && dimensions && !isLoading && (
+          <div className="viewer-dimensions-tag">
+            <span>
+              Dimensão real: {(dimensions.widthMeters * 100).toFixed(0)} ×{' '}
+              {(dimensions.heightMeters * 100).toFixed(0)} ×{' '}
+              {(dimensions.depthMeters * 100).toFixed(0)} cm
+            </span>
+          </div>
+        )}
+      </div>
+    );
+  },
+);
+
+Product3DViewer.displayName = 'Product3DViewer';

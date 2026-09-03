@@ -1,13 +1,11 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import Image from 'next/image';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowUpRight,
   Box,
   Check,
-  Minus,
-  Plus,
-  Rotate3D,
   ScanLine,
   ShoppingBag,
   Sparkles,
@@ -22,6 +20,11 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet';
+import {
+  Product3DViewer,
+  type ModelViewerRefHandle,
+  type ProductViewerState,
+} from '@/components/Product3DViewer';
 
 type Dish = {
   id: string;
@@ -31,6 +34,14 @@ type Dish = {
   serves: string;
   size: string;
   image: string;
+  model3dUrl?: string;
+  iosModelUrl?: string;
+  dimensions?: {
+    widthMeters: number;
+    heightMeters: number;
+    depthMeters: number;
+  };
+  arEnabled?: boolean;
   category: 'Burgers' | 'Porções' | 'Combos';
   accent: string;
   badge: string;
@@ -44,8 +55,15 @@ const dishes: Dish[] = [
       'Dois smash burgers, cheddar inglês, bacon crocante e cebola caramelizada no brioche.',
     price: 'R$ 39,90',
     serves: '1 pessoa',
-    size: '13 cm de largura',
+    size: '11 × 9 × 11 cm',
     image: '/burger.png',
+    model3dUrl: '/models/hamburger/hamburger-test.glb',
+    dimensions: {
+      widthMeters: 0.11,
+      heightMeters: 0.09,
+      depthMeters: 0.11,
+    },
+    arEnabled: true,
     category: 'Burgers',
     accent: '#39e59c',
     badge: 'Mais pedido',
@@ -97,9 +115,10 @@ type DishToolContext = {
 export default function Home() {
   const [category, setCategory] = useState<(typeof categories)[number]>('Destaques');
   const [selectedDish, setSelectedDish] = useState<Dish | null>(null);
-  const [arMode, setArMode] = useState(false);
-  const [scale, setScale] = useState(1);
   const [added, setAdded] = useState(false);
+  const [arNotice, setARNotice] = useState<string | null>(null);
+  const [viewerState, setViewerState] = useState<ProductViewerState>('image-only');
+  const viewerRef = useRef<ModelViewerRefHandle | null>(null);
 
   const visibleDishes = useMemo(
     () =>
@@ -137,9 +156,9 @@ export default function Home() {
             const dish = dishes.find((item) => item.id === dishId);
             if (!dish) throw new Error('Prato não encontrado.');
             setSelectedDish(dish);
-            setArMode(false);
-            setScale(1);
             setAdded(false);
+            setARNotice(null);
+            setViewerState(dish.model3dUrl ? 'loading' : 'image-only');
             return { opened: true, dishId: dish.id, dishName: dish.name };
           },
         },
@@ -152,9 +171,40 @@ export default function Home() {
 
   function openDish(dish: Dish) {
     setSelectedDish(dish);
-    setArMode(false);
-    setScale(1);
     setAdded(false);
+    setARNotice(null);
+    setViewerState(dish.model3dUrl ? 'loading' : 'image-only');
+  }
+
+  const handleViewerStateChange = useCallback((state: ProductViewerState) => {
+    setViewerState(state);
+  }, []);
+
+  async function handleActivateAR() {
+    if (!viewerRef.current) return;
+    const result = await viewerRef.current.activateAR();
+    if (result === 'started') {
+      setARNotice(null);
+      return;
+    }
+
+    if (result === 'ios-model-missing') {
+      setARNotice(
+        'No iPhone, a visualização AR exige um arquivo USDZ. Esta prova usa somente o GLB real do hambúrguer e não simula esse formato.',
+      );
+      return;
+    }
+
+    if (result === 'unsupported') {
+      setARNotice(
+        'A realidade aumentada não está disponível neste dispositivo. Abra o link HTTPS no Chrome de um Android compatível com ARCore.',
+      );
+      return;
+    }
+
+    setARNotice(
+      'Não foi possível iniciar a realidade aumentada agora. Confira a conexão e tente novamente no Chrome de um Android compatível.',
+    );
   }
 
   return (
@@ -188,7 +238,7 @@ export default function Home() {
               <ScanLine />
               <div>
                 <strong>Você está no modo demonstração</strong>
-                <span>A experiência real abre direto pelo QR da mesa.</span>
+                <span>A experiência real abre direto pelo QR da mesa com AR nativo.</span>
               </div>
             </div>
           </div>
@@ -217,9 +267,13 @@ export default function Home() {
           <div className="dish-grid">
             {visibleDishes.map((dish) => (
               <article key={dish.id} className="dish-card" style={{ '--dish-accent': dish.accent } as React.CSSProperties}>
-                <button className="dish-visual" onClick={() => openDish(dish)} aria-label={`Ver ${dish.name} em 3D`}>
-                  <span className="dish-badge"><Box /> Ver em 3D</span>
-                  <img src={dish.image} alt={dish.name} />
+                <button
+                  className="dish-visual"
+                  onClick={() => openDish(dish)}
+                  aria-label={dish.model3dUrl ? `Ver ${dish.name} em 3D` : `Ver detalhes de ${dish.name}`}
+                >
+                  <span className="dish-badge"><Box /> {dish.model3dUrl ? 'Ver em 3D' : 'Ver detalhes'}</span>
+                  <Image src={dish.image} alt={dish.name} width={1254} height={1254} />
                   <span className="dish-glow" aria-hidden="true" />
                 </button>
                 <div className="dish-body">
@@ -233,7 +287,7 @@ export default function Home() {
                   <p>{dish.description}</p>
                   <div className="dish-meta"><Users /> Serve {dish.serves}</div>
                   <Button onClick={() => openDish(dish)} className="dish-cta" size="lg">
-                    Ver na minha mesa <ArrowUpRight />
+                    {dish.model3dUrl ? 'Ver na minha mesa' : 'Abrir detalhes'} <ArrowUpRight />
                   </Button>
                 </div>
               </article>
@@ -243,11 +297,16 @@ export default function Home() {
 
         <footer>
           <span className="brand-mark small"><span className="brand-corners" aria-hidden="true" /><span>Dish</span><strong>AR</strong></span>
-          <p>Uma demonstração da próxima geração de cardápios.</p>
+          <p>Uma demonstração da próxima geração de cardápios interativos 3D & AR.</p>
         </footer>
       </div>
 
-      <Sheet open={Boolean(selectedDish)} onOpenChange={(open) => !open && setSelectedDish(null)}>
+      <Sheet open={Boolean(selectedDish)} onOpenChange={(open) => {
+        if (!open) {
+          setSelectedDish(null);
+          setARNotice(null);
+        }
+      }}>
         <SheetContent side="bottom" className="dish-sheet" showCloseButton>
           {selectedDish && (
             <>
@@ -256,19 +315,18 @@ export default function Home() {
                 <SheetDescription>{selectedDish.description}</SheetDescription>
               </SheetHeader>
 
-              <div className={`viewer-stage ${arMode ? 'ar-stage' : ''}`}>
-                {arMode && (
-                  <div className="ar-topbar">
-                    <span><span className="status-dot" /> Prévia de AR</span>
-                    <span>Escala real</span>
-                  </div>
-                )}
-                <div className="viewer-orbit" style={{ transform: `scale(${scale})` }}>
-                  <img src={selectedDish.image} alt={`${selectedDish.name} em visualização 3D`} />
-                </div>
-                {!arMode && <div className="viewer-ring" aria-hidden="true" />}
-                <span className="viewer-hint"><Rotate3D /> Arraste para girar</span>
-              </div>
+              {/* Visualizador 3D Real com @google/model-viewer */}
+              <Product3DViewer
+                key={selectedDish.id}
+                ref={viewerRef}
+                model3dUrl={selectedDish.model3dUrl}
+                iosModelUrl={selectedDish.iosModelUrl}
+                imageUrl={selectedDish.image}
+                dishName={selectedDish.name}
+                accentColor={selectedDish.accent}
+                dimensions={selectedDish.dimensions}
+                onViewerStateChange={handleViewerStateChange}
+              />
 
               <div className="sheet-info">
                 <div className="sheet-name-row">
@@ -284,24 +342,30 @@ export default function Home() {
                   <span><ScanLine /> {selectedDish.size}</span>
                 </div>
 
-                {arMode && (
-                  <div className="scale-control">
+                {/* Banner de instrução amigável caso AR não possa ser ativado no dispositivo atual (ex: desktop) */}
+                {arNotice && (
+                  <div className="ar-notice-banner">
+                    <ScanLine />
                     <div>
-                      <strong>Ajuste da prévia</strong>
-                      <span>O produto final usa a medida exata do prato.</span>
-                    </div>
-                    <div className="scale-actions">
-                      <Button variant="outline" size="icon-lg" onClick={() => setScale((value) => Math.max(.75, value - .1))} aria-label="Diminuir prévia"><Minus /></Button>
-                      <span>{Math.round(scale * 100)}%</span>
-                      <Button variant="outline" size="icon-lg" onClick={() => setScale((value) => Math.min(1.25, value + .1))} aria-label="Aumentar prévia"><Plus /></Button>
+                      <strong>Realidade Aumentada Mobile</strong>
+                      <p>
+                        {arNotice}
+                      </p>
                     </div>
                   </div>
                 )}
 
                 <div className="sheet-actions">
-                  <Button size="lg" className="primary-action" onClick={() => setArMode((value) => !value)}>
-                    {arMode ? <><Box /> Voltar ao 3D</> : <><ScanLine /> Ver na minha mesa</>}
-                  </Button>
+                  {selectedDish.model3dUrl && selectedDish.arEnabled && (
+                    <Button
+                      size="lg"
+                      className="primary-action"
+                      onClick={handleActivateAR}
+                      disabled={viewerState === 'loading' || viewerState === 'error'}
+                    >
+                      <ScanLine /> Ver na minha mesa
+                    </Button>
+                  )}
                   <Button
                     size="lg"
                     variant="outline"

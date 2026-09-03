@@ -71,6 +71,10 @@ type ModelViewerReactProps = React.HTMLAttributes<ModelViewerElement> & {
 
 const ModelViewerTag = 'model-viewer' as React.ElementType<ModelViewerReactProps>;
 
+function logARDiagnostic(event: string, details: Record<string, unknown>) {
+  console.info(`[DishAR AR] ${event}`, details);
+}
+
 function isIOSDevice() {
   if (typeof navigator === 'undefined') return false;
   return (
@@ -99,16 +103,27 @@ export const Product3DViewer = forwardRef<ModelViewerRefHandle, Product3DViewerP
     const [hasError, setHasError] = useState(false);
     const [errorMessage, setErrorMessage] = useState<string | null>(null);
     const [isUserInteracting, setIsUserInteracting] = useState(false);
+    const arModes = iosModelUrl
+      ? 'webxr scene-viewer quick-look'
+      : 'webxr scene-viewer';
 
     useEffect(() => {
       let isMounted = true;
 
       import('@google/model-viewer')
         .then(() => {
-          if (isMounted) setIsModuleReady(true);
+          if (isMounted) {
+            setIsModuleReady(true);
+            logARDiagnostic('module-ready', {
+              secureContext: window.isSecureContext,
+              pageUrl: window.location.href,
+              webXRAvailable: 'xr' in navigator,
+              userAgent: navigator.userAgent,
+            });
+          }
         })
         .catch((error: unknown) => {
-          console.error('Falha ao importar @google/model-viewer:', error);
+          console.error('[DishAR AR] module-error', error);
           if (isMounted) {
             setIsLoading(false);
             setHasError(true);
@@ -131,6 +146,15 @@ export const Product3DViewer = forwardRef<ModelViewerRefHandle, Product3DViewerP
         setHasError(false);
         setProgress(100);
         onViewerStateChange?.(viewer.canActivateAR ? 'ready-ar' : 'ready-3d');
+        logARDiagnostic('model-loaded', {
+          modelUrl: viewer.src,
+          arModes,
+          arPlacement: viewer.getAttribute('ar-placement'),
+          arScale: viewer.getAttribute('ar-scale'),
+          canActivateAR: viewer.canActivateAR,
+          secureContext: window.isSecureContext,
+          webXRAvailable: 'xr' in navigator,
+        });
       };
 
       const handleProgress = (event: Event) => {
@@ -141,7 +165,10 @@ export const Product3DViewer = forwardRef<ModelViewerRefHandle, Product3DViewerP
       };
 
       const handleError = (event: Event) => {
-        console.warn('Erro ao carregar modelo 3D:', event);
+        console.error('[DishAR AR] model-error', {
+          modelUrl: model3dUrl,
+          event,
+        });
         setIsLoading(false);
         setHasError(true);
         setErrorMessage('Não foi possível carregar o modelo 3D. Exibindo a foto do prato.');
@@ -150,48 +177,91 @@ export const Product3DViewer = forwardRef<ModelViewerRefHandle, Product3DViewerP
 
       const handleCameraChange = () => setIsUserInteracting(true);
 
+      const handleARStatus = (event: Event) => {
+        const status = (event as CustomEvent<{ status?: string }>).detail?.status;
+        const logger = status === 'failed' ? console.error : console.info;
+        logger('[DishAR AR] ar-status', { status });
+      };
+
+      const handleARTracking = (event: Event) => {
+        const status = (event as CustomEvent<{ status?: string }>).detail?.status;
+        const logger = status === 'not-tracking' ? console.warn : console.info;
+        logger('[DishAR AR] ar-tracking', { status });
+      };
+
+      const handleVisibilityChange = () => {
+        logARDiagnostic('page-visibility', {
+          visibilityState: document.visibilityState,
+        });
+      };
+
       viewer.addEventListener('load', handleLoad);
       viewer.addEventListener('progress', handleProgress);
       viewer.addEventListener('error', handleError);
       viewer.addEventListener('camera-change', handleCameraChange);
+      viewer.addEventListener('ar-status', handleARStatus);
+      viewer.addEventListener('ar-tracking', handleARTracking);
+      document.addEventListener('visibilitychange', handleVisibilityChange);
 
       return () => {
         viewer.removeEventListener('load', handleLoad);
         viewer.removeEventListener('progress', handleProgress);
         viewer.removeEventListener('error', handleError);
         viewer.removeEventListener('camera-change', handleCameraChange);
+        viewer.removeEventListener('ar-status', handleARStatus);
+        viewer.removeEventListener('ar-tracking', handleARTracking);
+        document.removeEventListener('visibilitychange', handleVisibilityChange);
       };
-    }, [isModuleReady, model3dUrl, onViewerStateChange]);
+    }, [arModes, isModuleReady, model3dUrl, onViewerStateChange]);
 
     useImperativeHandle(
       ref,
       () => ({
         activateAR: async () => {
-          if (!model3dUrl || hasError) return 'model-unavailable';
-          if (isIOSDevice() && !iosModelUrl) return 'ios-model-missing';
+          logARDiagnostic('activation-requested', {
+            modelUrl: model3dUrl,
+            arModes,
+            secureContext: window.isSecureContext,
+            webXRAvailable: 'xr' in navigator,
+            canActivateAR: Boolean(modelViewerRef.current?.canActivateAR),
+          });
+
+          if (!model3dUrl || hasError) {
+            console.error('[DishAR AR] activation-blocked', {
+              reason: 'model-unavailable',
+            });
+            return 'model-unavailable';
+          }
+          if (isIOSDevice() && !iosModelUrl) {
+            console.warn('[DishAR AR] activation-blocked', {
+              reason: 'ios-model-missing',
+            });
+            return 'ios-model-missing';
+          }
 
           const viewer = modelViewerRef.current;
           if (!viewer?.canActivateAR || typeof viewer.activateAR !== 'function') {
+            console.warn('[DishAR AR] activation-blocked', {
+              reason: 'unsupported',
+            });
             return 'unsupported';
           }
 
           try {
             await viewer.activateAR();
+            logARDiagnostic('activation-dispatched', { arModes });
             return 'started';
           } catch (error: unknown) {
-            console.error('Erro ao ativar AR:', error);
+            console.error('[DishAR AR] activation-error', error);
             return 'failed';
           }
         },
         canActivateAR: () => Boolean(modelViewerRef.current?.canActivateAR),
       }),
-      [hasError, iosModelUrl, model3dUrl],
+      [arModes, hasError, iosModelUrl, model3dUrl],
     );
 
     const has3DModel = Boolean(model3dUrl && isModuleReady && !hasError);
-    const arModes = iosModelUrl
-      ? 'webxr scene-viewer quick-look'
-      : 'webxr scene-viewer';
 
     return (
       <div className="product-3d-stage">

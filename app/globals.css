@@ -231,6 +231,54 @@ footer p { margin: 0; }
   z-index: 5;
 }
 
+/* Feedback visível durante falhas e perda de rastreamento no AR */
+.viewer-ar-feedback {
+  position: absolute;
+  z-index: 15;
+  left: 50%;
+  bottom: 1rem;
+  width: max-content;
+  max-width: min(32rem, calc(100% - 2rem));
+  display: flex;
+  align-items: flex-start;
+  gap: .65rem;
+  padding: .75rem .9rem;
+  border: 1px solid rgba(255,255,255,.14);
+  border-radius: .9rem;
+  background: rgba(8,12,11,.9);
+  color: #eef5f1;
+  font-size: .78rem;
+  font-weight: 600;
+  line-height: 1.45;
+  box-shadow: 0 .75rem 2rem rgba(0,0,0,.38);
+  backdrop-filter: blur(12px);
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.viewer-ar-feedback svg {
+  width: 1.1rem;
+  height: 1.1rem;
+  flex: 0 0 auto;
+  margin-top: .05rem;
+}
+
+.viewer-ar-feedback-error {
+  border-color: rgba(255,103,93,.4);
+}
+
+.viewer-ar-feedback-error svg {
+  color: var(--destructive);
+}
+
+.viewer-ar-feedback-tracking {
+  border-color: rgba(255,201,92,.38);
+}
+
+.viewer-ar-feedback-tracking svg {
+  color: #ffc95c;
+}
+
 /* Dica de Rotação 3D Real */
 .viewer-interaction-hint {
   position: absolute;

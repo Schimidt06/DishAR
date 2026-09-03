@@ -25,6 +25,11 @@ export type ProductViewerState =
   | 'image-only'
   | 'error';
 
+type ARFeedback = {
+  kind: 'error' | 'tracking';
+  message: string;
+} | null;
+
 export interface ModelViewerRefHandle {
   activateAR: () => Promise<ARActivationResult>;
   canActivateAR: () => boolean;
@@ -103,6 +108,7 @@ export const Product3DViewer = forwardRef<ModelViewerRefHandle, Product3DViewerP
     const [hasError, setHasError] = useState(false);
     const [errorMessage, setErrorMessage] = useState<string | null>(null);
     const [isUserInteracting, setIsUserInteracting] = useState(false);
+    const [arFeedback, setARFeedback] = useState<ARFeedback>(null);
     const arModes = iosModelUrl
       ? 'webxr scene-viewer quick-look'
       : 'webxr scene-viewer';
@@ -181,12 +187,30 @@ export const Product3DViewer = forwardRef<ModelViewerRefHandle, Product3DViewerP
         const status = (event as CustomEvent<{ status?: string }>).detail?.status;
         const logger = status === 'failed' ? console.error : console.info;
         logger('[DishAR AR] ar-status', { status });
+
+        if (status === 'failed') {
+          setARFeedback({
+            kind: 'error',
+            message:
+              'Não foi possível iniciar a realidade aumentada. Verifique se seu aparelho é compatível e tente novamente.',
+          });
+        }
       };
 
       const handleARTracking = (event: Event) => {
         const status = (event as CustomEvent<{ status?: string }>).detail?.status;
         const logger = status === 'not-tracking' ? console.warn : console.info;
         logger('[DishAR AR] ar-tracking', { status });
+
+        if (status === 'not-tracking') {
+          setARFeedback({
+            kind: 'tracking',
+            message:
+              'Não encontramos uma superfície estável. Mova o celular lentamente sobre uma mesa bem iluminada.',
+          });
+        } else if (status === 'tracking') {
+          setARFeedback(null);
+        }
       };
 
       const handleVisibilityChange = () => {
@@ -218,6 +242,7 @@ export const Product3DViewer = forwardRef<ModelViewerRefHandle, Product3DViewerP
       ref,
       () => ({
         activateAR: async () => {
+          setARFeedback(null);
           logARDiagnostic('activation-requested', {
             modelUrl: model3dUrl,
             arModes,
@@ -298,7 +323,17 @@ export const Product3DViewer = forwardRef<ModelViewerRefHandle, Product3DViewerP
                 '--poster-color': 'transparent',
               } as React.CSSProperties & { '--poster-color': string }
             }
-          />
+          >
+            {arFeedback && (
+              <output
+                className={`viewer-ar-feedback viewer-ar-feedback-${arFeedback.kind}`}
+                aria-live={arFeedback.kind === 'error' ? 'assertive' : 'polite'}
+              >
+                <AlertCircle aria-hidden="true" />
+                <span>{arFeedback.message}</span>
+              </output>
+            )}
+          </ModelViewerTag>
         )}
 
         {model3dUrl && !hasError && isLoading && (
@@ -332,7 +367,7 @@ export const Product3DViewer = forwardRef<ModelViewerRefHandle, Product3DViewerP
           </div>
         )}
 
-        {has3DModel && !isLoading && (
+        {has3DModel && !isLoading && !arFeedback && (
           <div className={`viewer-interaction-hint ${isUserInteracting ? 'hint-dimmed' : ''}`}>
             <Rotate3D className="hint-icon" />
             <span>Arraste para girar 360°</span>

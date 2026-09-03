@@ -58,6 +58,7 @@ const dishes: Dish[] = [
     size: '11 × 9 × 11 cm',
     image: '/burger.png',
     model3dUrl: '/models/hamburger/hamburger-test.glb',
+    iosModelUrl: '/models/burger.usdz',
     dimensions: {
       widthMeters: 0.11,
       heightMeters: 0.09,
